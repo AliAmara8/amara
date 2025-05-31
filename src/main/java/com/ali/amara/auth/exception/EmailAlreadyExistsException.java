@@ -1,11 +1,15 @@
 package com.ali.amara.auth.exception;
 
-public class EmailAlreadyExistsException extends RuntimeException {
+public class EmailAlreadyExistsException extends BaseAuthException {
+
+    private static final String ERROR_CODE = "EMAIL_ALREADY_EXISTS";
+
     public EmailAlreadyExistsException(String message) {
         super(message);
     }
 
-    public EmailAlreadyExistsException(String message, Throwable cause) {
-        super(message, cause);
+    @Override
+    public String getErrorCode() {
+        return ERROR_CODE;
     }
 }

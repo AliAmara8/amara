@@ -1,11 +1,19 @@
 package com.ali.amara.auth.exception;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
+public class InvalidTokenException extends BaseAuthException {
 
-@ResponseStatus(HttpStatus.FORBIDDEN)
-public class InvalidTokenException extends RuntimeException {
+    private static final String ERROR_CODE = "INVALID_TOKEN";
+
     public InvalidTokenException(String message) {
         super(message);
+    }
+
+    public InvalidTokenException(String message, Throwable cause) {
+        super(message, cause);
+    }
+
+    @Override
+    public String getErrorCode() {
+        return ERROR_CODE;
     }
 }

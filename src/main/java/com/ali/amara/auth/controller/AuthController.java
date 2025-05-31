@@ -3,6 +3,7 @@ package com.ali.amara.auth.controller;
 import com.ali.amara.auth.dto.AuthRequest;
 import com.ali.amara.auth.dto.AuthResponse;
 import com.ali.amara.auth.dto.RegisterRequest;
+import com.ali.amara.auth.dto.UserResponse;
 import com.ali.amara.auth.service.AuthService;
 import com.ali.amara.auth.service.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
