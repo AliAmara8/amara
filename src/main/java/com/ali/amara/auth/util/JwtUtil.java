@@ -16,10 +16,10 @@ import java.util.stream.Collectors;
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret}")
+    @Value("${application.security.jwt.secret-key}")
     private String secret;
 
-    @Value("${jwt.expiration}")
+    @Value("${application.security.jwt.expiration}")
     private Long expiration;
 
     private Key getSigningKey() {
@@ -51,4 +51,41 @@ public class JwtUtil {
             return false;
         }
     }
+
+    public String extractUsername(String token) {
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody()
+                    .getSubject();
+        } catch (Exception e) {
+            log.error("Failed to extract username from token: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public boolean validateToken(String token, UserDetails userDetails) {
+        final String username = extractUsername(token);
+        return (username != null &&
+                username.equals(userDetails.getUsername()) &&
+                !isTokenExpired(token));
+    }
+
+    private boolean isTokenExpired(String token) {
+        try {
+            final Date expiration = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody()
+                    .getExpiration();
+            return expiration.before(new Date());
+        } catch (Exception e) {
+            log.error("Failed to check token expiration: {}", e.getMessage());
+            return true;
+        }
+    }
 }
+

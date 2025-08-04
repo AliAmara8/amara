@@ -1,41 +1,26 @@
 package com.ali.amara.auth.dto;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.ali.amara.session.dto.UserSessionDTO;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
 
-import java.time.Instant;
-
+@Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AuthResponse(
-        String token,
-        String tokenType,
-
-        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-        Instant expiresAt,
-
-        Long expiresIn, // Durée en secondes
-
-        UserResponse user,
-
-        String message // Pour les messages de confirmation (inscription, etc.)
+        @JsonProperty("access_token") String accessToken,
+        @JsonProperty("refresh_token") String refreshToken,
+        UserSessionDTO sessionInfo
 ) {
-    // Constructeur par défaut avec Bearer token
-    public AuthResponse(String token, Instant expiresAt, UserResponse user) {
-        this(token, "Bearer", expiresAt, null, user, null);
+    public static AuthResponse of(String accessToken) {
+        return new AuthResponse(accessToken, null, null);
     }
 
-    // Constructeur avec durée d'expiration
-    public AuthResponse(String token, Instant expiresAt, Long expiresIn, UserResponse user) {
-        this(token, "Bearer", expiresAt, expiresIn, user, null);
+    public static AuthResponse withRefresh(String accessToken, String refreshToken) {
+        return new AuthResponse(accessToken, refreshToken, null);
     }
-
-    // Constructeur pour les réponses avec message seulement
-    public static AuthResponse withMessage(String message) {
-        return new AuthResponse(null, null, null, null, null, message);
-    }
-
-    // Constructeur pour les réponses avec message et utilisateur
-    public static AuthResponse withMessageAndUser(String message, UserResponse user) {
-        return new AuthResponse(null, null, null, null, user, message);
+    // Constructeur personnalisé pour le cas sans user
+    public AuthResponse(String accessToken, String refreshToken) {
+        this(accessToken, refreshToken, null); // Appelle le constructeur principal avec user = null
     }
 }

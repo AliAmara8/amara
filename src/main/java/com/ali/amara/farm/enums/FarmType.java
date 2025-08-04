@@ -1,0 +1,16 @@
+package com.ali.amara.farm.enums;
+
+public enum FarmType {
+    CROP_FARMING,
+    LIVESTOCK,
+    LIVESTOCK_FARMING,
+    MIXED_FARMING,
+    AQUACULTURE,
+    HORTICULTURE,
+    AGROFORESTRY,
+    ORGANIC_FARMING,
+    GREENHOUSE,
+    PERMACULTURE,
+    HYDROPONICS,
+    APICULTURE
+}

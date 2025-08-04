@@ -1,6 +1,6 @@
 package com.ali.amara.chat;
 
-enum MessageStatus {
+public enum MessageStatus {
     SENT,
     DELIVERED,
     READ

@@ -13,6 +13,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -28,6 +29,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
     private final TokenBlacklistService tokenBlacklistService;
 
     @Override
@@ -44,14 +46,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             final String token = authHeader.substring(BEARER_PREFIX.length());
+            final String username = jwtService.extractUsername(token);
+
+            log.info("Attempting authentication for user: '{}'", username);
+            // Vérifie que le token n'est pas blacklisté (pour le logout)
             if (tokenBlacklistService.isBlacklisted(token)) {
-                throw new InvalidTokenException("Token is no longer valid");
+                throw new InvalidTokenException("Token has been blacklisted (logged out)");
             }
 
-            final String username = jwtService.extractUsername(token);
+            // Si on a un username et que l'utilisateur n'est pas déjà authentifié
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = jwtService.loadUserByUsername(username);
-                if (jwtService.validateToken(token, userDetails)) {
+
+                log.info("Username found in token: '{}'", username);
+                log.info("Loading UserDetails for username: '{}'", username);
+                // On charge l'utilisateur via le UserDetailsService, pas le JwtService
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+
+                log.info("UserDetails loaded successfully. Username from UserDetails: '{}'", userDetails.getUsername());
+                if (jwtService.isTokenValid(token, userDetails)) {
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
                             null,
@@ -62,10 +74,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            SecurityContextHolder.clearContext();
-            log.error("Authentication error: {}", e.getMessage());
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Authentication failed");
-            return;
+            log.warn("JWT Token processing failed: {}", e.getMessage());
+            SecurityContextHolder.clearContext(); // Assurez-vous que le contexte est propre
         }
 
         filterChain.doFilter(request, response);

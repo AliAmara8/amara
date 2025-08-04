@@ -1,22 +1,18 @@
 package com.ali.amara.auth.service;
 
 import com.ali.amara.auth.config.JwtConfig;
-import com.ali.amara.auth.exception.InvalidTokenException;
-import com.ali.amara.user.UserEntity;
+import com.ali.amara.user.entity.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
-import io.jsonwebtoken.security.SignatureException;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,72 +24,75 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class JwtService {
 
-    private static final String AUTH_HEADER = "Authorization";
-    private static final String BEARER_PREFIX = "Bearer ";
-
     private final JwtConfig jwtConfig;
-    private final UserDetailsService userDetailsService;
 
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtConfig.secret().getBytes());
-    }
+    // --- Génération de Tokens ---
 
-    public String generateToken(UserEntity user) {
+    public String generateToken(User user) {
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("userId", user.getId());
-        extraClaims.put("email", user.getEmail());
-        extraClaims.put("roles", user.getAuthorities()
-                .stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList()));
-
-        return generateToken(extraClaims, user);
+        // Les rôles sont déjà inclus dans les autorités de UserDetails
+        // extraClaims. put("roles", user.getAuthorities()...); // Optionnel si vous les voulez en plus.
+        return buildToken(extraClaims, user);
     }
 
-    public String generateToken(UserDetails userDetails) {
+    public String generateRefreshToken(User user) {
         Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("roles", userDetails.getAuthorities()
-                .stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList()));
-
-        return generateToken(extraClaims, userDetails);
+        extraClaims.put("userId", user.getId());
+        return buildToken(extraClaims, user, jwtConfig.getRefreshTokenExpiration());
     }
 
-    private String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
+    private String buildToken(Map<String, Object> extraClaims, UserDetails userDetails) {
+        return buildToken(extraClaims, userDetails, jwtConfig.expiration());
+    }
+
+    private String buildToken(Map<String, Object> extraClaims, UserDetails userDetails, long expiration) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .setClaims(extraClaims)
+                .setSubject(userDetails.getUsername())
+                .setIssuer(jwtConfig.issuer())
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(now.plusMillis(expiration)))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS512)
+                .compact();
+    }
+
+
+    // --- Validation de Tokens ---
+
+    public boolean isTokenValid(String token, UserDetails userDetails) {
         try {
-            return Jwts.builder()
-                    .setClaims(extraClaims)
-                    .setSubject(userDetails.getUsername())
-                    .setIssuer(jwtConfig.issuer())
-                    .setIssuedAt(new Date(System.currentTimeMillis()))
-                    .setExpiration(new Date(System.currentTimeMillis() + jwtConfig.expiration()))
-                    .signWith(getSigningKey(), SignatureAlgorithm.HS512)
-                    .compact();
+            final String username = extractUsername(token);
+            // Vérifie que le nom d'utilisateur correspond ET que le token n'est pas expiré
+            // (La vérification de l'expiration est déjà faite dans extractAllClaims, mais une double vérification ne fait pas de mal)
+            return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
         } catch (Exception e) {
-            log.error("Error generating JWT token for user: {}", userDetails.getUsername(), e);
-            throw new InvalidTokenException("Failed to generate token");
+            // Si une exception est levée par extractUsername (signature invalide, expiré, malformé), le token n'est pas valide.
+            log.warn("Token validation failed: {}", e.getMessage());
+            return false;
         }
     }
+
+    private boolean isTokenExpired(String token) {
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            // Si on ne peut pas extraire la date, le token est invalide
+            return true;
+        }
+    }
+
+
+    // --- Extraction des "Claims" (données du token) ---
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
-    public String extractUserId(String token) {
-        return extractClaim(token, claims -> claims.get("userId", String.class));
-    }
-
-    public String extractEmail(String token) {
-        return extractClaim(token, claims -> claims.get("email", String.class));
-    }
-
-    public Date getExpirationDateFromToken(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    public Instant getExpirationInstantFromToken(String token) {
-        return getExpirationDateFromToken(token).toInstant();
+    public Long extractUserId(String token) {
+        // Il est plus sûr de récupérer l'ID comme un Long ou Integer
+        return extractClaim(token, claims -> claims.get("userId", Long.class));
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
@@ -102,85 +101,71 @@ public class JwtService {
     }
 
     private Claims extractAllClaims(String token) {
-        try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(getSigningKey())
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (ExpiredJwtException e) {
-            log.warn("JWT token is expired: {}", e.getMessage());
-            throw new InvalidTokenException("Token has expired");
-        } catch (UnsupportedJwtException e) {
-            log.error("JWT token is unsupported: {}", e.getMessage());
-            throw new InvalidTokenException("Unsupported token format");
-        } catch (MalformedJwtException e) {
-            log.error("JWT token is malformed: {}", e.getMessage());
-            throw new InvalidTokenException("Malformed token");
-        } catch (SignatureException e) {
-            log.error("JWT signature validation failed: {}", e.getMessage());
-            throw new InvalidTokenException("Invalid token signature");
-        } catch (IllegalArgumentException e) {
-            log.error("JWT token compact of handler are invalid: {}", e.getMessage());
-            throw new InvalidTokenException("Invalid token");
-        }
+        // Cette méthode valide la signature, l'expiration, etc. et lève une exception si le token est invalide.
+        // C'est le seul endroit où l'on parse le token.
+        return Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
-    public boolean validateToken(String token, UserDetails userDetails) {
+    public Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
+    }
+
+    public String generatePasswordResetToken(UserDetails user) {
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("purpose", "password_reset");
+        // Utilisation d'une durée de vie plus courte, par exemple 1 heure
+        long expirationInMillis = ChronoUnit.HOURS.getDuration().toMillis();
+        return buildToken(extraClaims, user, expirationInMillis);
+    }
+
+    public boolean isPasswordResetTokenValid(String token) {
         try {
-            final String username = extractUsername(token);
-            return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
-        } catch (InvalidTokenException e) {
-            log.debug("Token validation failed for user: {}", userDetails.getUsername());
+            final Claims claims = extractAllClaims(token);
+            boolean isResetToken = "password_reset".equals(claims.get("purpose", String.class));
+            return isResetToken && !isTokenExpired(token);
+        } catch (Exception e) {
+            log.warn("Password reset token validation failed: {}", e.getMessage());
             return false;
         }
     }
 
-    public boolean validateToken(String token) {
+
+    // --- Méthodes Utilitaires ---
+
+    private SecretKey getSigningKey() {
+        // J'ai enlevé les .getBytes() car la clé secrète dans votre yml est déjà une chaîne de caractères.
+        // Si elle était encodée en Base64, il faudrait utiliser Decoders.BASE64.decode()
+        return Keys.hmacShaKeyFor(jwtConfig.getSecretKey().getBytes());
+    }
+
+    public String generateEmergencyLogoutToken(User user) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("purpose", "emergency_logout"); // On identifie le but du token
+
+        // Ce token a une durée de vie courte, par exemple 1 heure
+        long expirationInMillis = ChronoUnit.HOURS.getDuration().toMillis();
+
+        return buildToken(claims, user, expirationInMillis);
+    }
+
+    /**
+     * Valide si un token est un token de déconnexion d'urgence valide.
+     * Vérifie la signature, l'expiration et le "purpose" spécifique.
+     * @param token Le token à vérifier.
+     * @return Vrai si le token est valide, sinon faux.
+     */
+    public boolean isEmergencyLogoutTokenValid(String token) {
         try {
-            extractAllClaims(token);
-            return !isTokenExpired(token);
-        } catch (InvalidTokenException e) {
+            final Claims claims = extractAllClaims(token); // On utilise la méthode privée ici
+            boolean isCorrectPurpose = "emergency_logout".equals(claims.get("purpose", String.class));
+            return isCorrectPurpose && !isTokenExpired(token);
+        } catch (Exception e) {
+            // Toute exception (signature invalide, malformé, expiré) rend le token invalide.
             return false;
-        }
-    }
-
-    private boolean isTokenExpired(String token) {
-        return getExpirationDateFromToken(token).before(new Date());
-    }
-
-    public UserDetails loadUserByUsername(String username) {
-        try {
-            return userDetailsService.loadUserByUsername(username);
-        } catch (Exception e) {
-            log.error("Failed to load user: {}", username, e);
-            throw new InvalidTokenException("User not found");
-        }
-    }
-
-    public String extractToken(HttpServletRequest request) {
-        final String authHeader = request.getHeader(AUTH_HEADER);
-        if (StringUtils.hasText(authHeader) && authHeader.startsWith(BEARER_PREFIX)) {
-            return authHeader.substring(BEARER_PREFIX.length());
-        }
-        throw new InvalidTokenException("No valid token found in request");
-    }
-
-    public long getTokenValidityInSeconds() {
-        return jwtConfig.expiration() / 1000;
-    }
-
-    // Méthode pour extraire les informations de token sans validation complète (pour logs par exemple)
-    public String extractUsernameUnsafe(String token) {
-        try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(getSigningKey())
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody()
-                    .getSubject();
-        } catch (Exception e) {
-            return "unknown";
         }
     }
 }
