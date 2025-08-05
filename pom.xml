@@ -20,6 +20,9 @@
 		<jjwt.version>0.11.5</jjwt.version>
 		<modelmapper.version>3.1.1</modelmapper.version>
 		<springdoc.version>2.5.0</springdoc.version>
+		<org.mapstruct.version>1.5.5.Final</org.mapstruct.version>
+		<lombok.version>1.18.32</lombok.version>
+
 	</properties>
 
 	<dependencies>
@@ -87,6 +90,12 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<dependency>
+			<groupId>org.mapstruct</groupId>
+			<artifactId>mapstruct</artifactId>
+			<version>${org.mapstruct.version}</version>
+		</dependency>
+
 		<!-- Swagger/OpenAPI (non géré par Spring Boot) -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
@@ -94,12 +103,6 @@
 			<version>${springdoc.version}</version>
 		</dependency>
 
-		<!-- Utilitaires (généralement non gérés par Spring Boot) -->
-		<dependency>
-			<groupId>org.modelmapper</groupId>
-			<artifactId>modelmapper</artifactId>
-			<version>${modelmapper.version}</version>
-		</dependency>
 		<dependency>
 			<groupId>commons-validator</groupId>
 			<artifactId>commons-validator</artifactId>
@@ -133,6 +136,8 @@
 
 	<build>
 		<plugins>
+
+			<!-- PLUGIN #1: The existing Spring Boot Plugin -->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
@@ -145,6 +150,39 @@
 					</excludes>
 				</configuration>
 			</plugin>
+
+			<!-- PLUGIN #2: The new Maven Compiler Plugin for MapStruct and Lombok -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.8.1</version> <!-- It's good practice to specify a version -->
+				<configuration>
+					<source>17</source> <!-- Use your Java version -->
+					<target>17</target> <!-- Use your Java version -->
+					<annotationProcessorPaths>
+						<!-- Path for MapStruct -->
+						<path>
+							<groupId>org.mapstruct</groupId>
+							<artifactId>mapstruct-processor</artifactId>
+							<version>${org.mapstruct.version}</version> <!-- IMPORTANT: Make sure you have this property defined -->
+						</path>
+						<!-- Path for Lombok -->
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version> <!-- IMPORTANT: Make sure you have this property defined -->
+						</path>
+						<!-- This dependency is needed to make MapStruct and Lombok work together -->
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok-mapstruct-binding</artifactId>
+							<version>0.2.0</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+
 		</plugins>
 	</build>
+
 </project>
